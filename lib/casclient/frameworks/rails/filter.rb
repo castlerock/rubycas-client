@@ -214,7 +214,7 @@ module CASClient
               log.debug "Intercepted single-sign-out request for CAS session #{si.inspect}."
               
               required_sess_store = ActiveRecord::SessionStore
-              current_sess_store  = ActionController::Base.session_options[:database_manager]
+              current_sess_store  = ActionController::Base.session_store
               
               if current_sess_store == required_sess_store
                 session_id = read_service_session_lookup(si)
