@@ -213,14 +213,14 @@ module CASClient
               
               log.debug "Intercepted single-sign-out request for CAS session #{si.inspect}."
               
-              required_sess_store = ActionController::Session::ActiveRecordStore
+              required_sess_store = ActiveRecord::SessionStore
               current_sess_store  = ActionController::Base.session_options[:database_manager]
               
               if current_sess_store == required_sess_store
                 session_id = read_service_session_lookup(si)
                 
                 if session_id
-                  session = ActionController::Session::ActiveRecordStore::Session.find_by_session_id(session_id)
+                  session =  ActiveRecord::SessionStore::Session.find_by_session_id(session_id)
                   if session
                     session.destroy
                     log.debug("Destroyed #{session.inspect} for session #{session_id.inspect} corresponding to service ticket #{si.inspect}.")
