@@ -39,8 +39,10 @@ module CASClient
               # Re-use the previous ticket if the user already has a local CAS session (i.e. if they were already
               # previously authenticated for this service). This is to prevent redirection to the CAS server on every
               # request.
+              #
               # This behaviour can be disabled (so that every request is routed through the CAS server) by setting
-              # the :authenticate_on_every_request config option to false.
+              # the :authenticate_on_every_request config option to true. However, this is not desirable since
+              # it will almost certainly break POST request, AJAX calls, etc.
               log.debug "Existing local CAS session detected for #{controller.session[client.username_session_key].inspect}. "+
                 "Previous ticket #{last_st.ticket.inspect} will be re-used."
               st = last_st
@@ -67,8 +69,8 @@ module CASClient
                   controller.session[:casfilteruser] = vr.user
                   
                   if config[:enable_single_sign_out]
-                    f = store_service_session_lookup(st, controller.session.session_id)
-                    log.debug("Wrote service session lookup file to #{f.inspect} with session id #{controller.session.session_id.inspect}.")
+                    f = store_service_session_lookup(st, controller.request.session_options[:id] || controller.session.session_id)
+                    log.debug("Wrote service session lookup file to #{f.inspect} with session id #{controller.request.session_options[:id] || controller.session.session_id.inspect}.")
                   end
                 end
               
@@ -101,10 +103,13 @@ module CASClient
                 redirect_to_cas_for_authentication(controller)
                 return false
               end
-            else
+            else # no service ticket was present in the request
               if returning_from_gateway?(controller)
                 log.info "Returning from CAS gateway without authentication."
                 
+                # unset, to allow for the next request to be authenticated if necessary
+                controller.session[:cas_sent_to_gateway] = false
+
                 if use_gatewaying?
                   log.info "This CAS client is configured to use gatewaying, so we will permit the user to continue without authentication."
                   return true
@@ -213,14 +218,21 @@ module CASClient
               
               log.debug "Intercepted single-sign-out request for CAS session #{si.inspect}."
               
-              required_sess_store = ActiveRecord::SessionStore
-              current_sess_store  = ActionController::Base.session_store
+              begin
+                required_sess_store = ActiveRecord::SessionStore
+                current_sess_store  = ActionController::Base.session_store
+              rescue NameError
+                # for older versions of Rails (prior to 2.3)
+                required_sess_store = CGI::Session::ActiveRecordStore
+                current_sess_store  = ActionController::Base.session_options[:database_manager]
+              end
+
               
               if current_sess_store == required_sess_store
                 session_id = read_service_session_lookup(si)
                 
                 if session_id
-                  session =  ActiveRecord::SessionStore::Session.find_by_session_id(session_id)
+                  session = current_sess_store::Session.find_by_session_id(session_id)
                   if session
                     session.destroy
                     log.debug("Destroyed #{session.inspect} for session #{session_id.inspect} corresponding to service ticket #{si.inspect}.")
